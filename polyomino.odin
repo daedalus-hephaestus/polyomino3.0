@@ -123,6 +123,37 @@ clone_poly :: proc(poly: Polyomino) -> (res: Polyomino) {
 	return res	
 }
 
+valid_poly_2 :: proc(poly: Polyomino, type: Type=.FIXED, s: int=-1) -> (err: PolyErr) {
+	size := poly_size(poly)
+	if s >= 0 && size != s {
+		err = .WRONG_SIZE
+		return
+	}
+
+	checked : [dynamic]Cell
+	origin := Cell{ 0, 0 }
+	append(&checked, origin)
+	border := poly_neighbors(origin)
+	count := 1
+
+	for i in 0..<poly_len(poly) {
+
+	}
+
+	return
+}
+
+poly_neighbors :: proc(c: Cell) -> [dynamic]Cell {
+	found : [dynamic]Cell
+
+	if c.y > 1 || (c.y == 1 && c.x > -1) do append(&found, Cell{ c.x, c.y - 1 })
+	if c.x != 0 || c.x != 0 do append(&found, Cell{ c.x - 1, c.y })
+	append(&found, Cell{ c.x + 1, c.y })
+	append(&found, Cell{ c.x, c.y + 1 })
+
+	return found
+}
+
 // valid_poly returns if a polyomino of certain size and type is valid
 valid_poly :: proc(poly: Polyomino, type: Type=.FIXED, s: int=-1) -> (err: PolyErr, field: Field) {
 	size := poly_size(poly)
@@ -179,6 +210,17 @@ poly_size :: proc(poly: Polyomino) -> (size: int) {
 		size += int(bits.count_ones(i))
 	}
 	return size	
+}
+
+poly_len :: proc(poly: Polyomino) -> (length: int) {
+	for seg, i in poly {
+		if i == len(poly) - 1 {
+			length += int(bits.count_leading_zeros(seg))
+		} else {
+			length += 128
+		}
+	}
+	return
 }
 
 // destroy_set frees the memory occupied by a set of polyominos

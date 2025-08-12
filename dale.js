@@ -58,18 +58,18 @@ function is_valid_poly_string( binary_string, poly_size ) {
     let border = checked[0].redelmeier_neighbors();
     let cell_count = 1;
     for ( let i = 1; i < binary_string.length; i++ ) {
-            let check_me = border[0]
-            checked.push(border[0]);
-            border.shift();
-            if ( binary_string[i] == "1" ) {
-                cell_count++
-                let next_neighbors = check_me.redelmeier_neighbors();
-                for ( let neighbor of next_neighbors ) {
-                    if ( !includes_cell(neighbor, checked) && !includes_cell(neighbor, border) ) {
-                        border.push(neighbor);
-                    }
-                }
-            }
+				let check_me = border[0]
+				checked.push(border[0]);
+				border.shift();
+				if ( binary_string[i] == "1" ) {
+						cell_count++
+						let next_neighbors = check_me.redelmeier_neighbors();
+						for ( let neighbor of next_neighbors ) {
+								if ( !includes_cell(neighbor, checked) && !includes_cell(neighbor, border) ) {
+										border.push(neighbor);
+								}
+						}
+				}
         if ( border.length == 0 ) {
             if ( cell_count == poly_size ) {
                 return true;
