@@ -298,6 +298,7 @@ Header_Err :: enum {
 TCP_Err :: union {
 	Header_Err,
 	net.Network_Error,
+	net.TCP_Send_Error,
 	net.TCP_Recv_Error
 }
 
@@ -345,7 +346,7 @@ recv_connection :: proc(socket: net.TCP_Socket) -> (packet: Packet, err: TCP_Err
 	return
 }
 
-send_connection :: proc(socket: net.TCP_Socket, packet: Packet) -> (err: net.TCP_Send_Error) {
+send_connection :: proc(socket: net.TCP_Socket, packet: Packet) -> (err: TCP_Err) {
 	fmt.println(packet)
 	bytes := encode_packet(packet)
 	defer delete(bytes)
