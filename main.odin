@@ -1,16 +1,11 @@
-#+feature dynamic-literals
-
 package polyomino
 
 import "core:fmt"
 import "core:mem"
-import "core:time"
 
-stopwatch : time.Stopwatch
-Time :: [3]int
+password := "polyominosrock"
 
 main :: proc() {
-
 	when ODIN_DEBUG {
 		track: mem.Tracking_Allocator
 		mem.tracking_allocator_init(&track, context.allocator)
@@ -30,24 +25,16 @@ main :: proc() {
 			mem.tracking_allocator_destroy(&track)
 		}
 	}
+	
+	req := TimeoutResponse {
+		connected = false
+	}
+	enc_req := encode_timeout_response(req)
+	defer delete(enc_req)
+	fmt.println(enc_req)
 
-	time.stopwatch_start(&stopwatch)
-	poly, field := index_poly(20, .FIXED, 1000000, 0, 32)
-	defer destroy_poly(poly)
-	defer destroy_field(field)
+	
+	decoded, ok := decode_timeout_response(enc_req[:])
+	fmt.println(decoded, ok)
 
-
-	time.stopwatch_stop(&stopwatch)
-	t := get_time(stopwatch)
-	print_time(t)
-
-} 
-
-get_time :: proc(watch: time.Stopwatch) -> Time {
-	h, m, s := time.clock_from_stopwatch(watch)
-	return {h, m, s}
-}
-
-print_time :: proc(t: Time) {
-	fmt.printfln("%vh %vm %vs", t[0], t[1], t[2])
 }
