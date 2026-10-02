@@ -297,7 +297,8 @@ Header_Err :: enum {
 
 TCP_Err :: union {
 	Header_Err,
-	net.TCP_Recv_Error,
+	net.Network_Error,
+	net.TCP_Recv_Error
 }
 
 // reads a packet from the tcp connection

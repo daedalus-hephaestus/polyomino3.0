@@ -88,7 +88,10 @@ connect :: proc(opt: Options) {
 		case poly.TimeoutRequest:
 			poly.send_connection(
 				socket,
-				{header = {type = .TimeoutResponse, id = id}, payload = {connected = true}},
+				{
+					header = {type = .TimeoutResponse, id = id},
+					payload = poly.TimeoutResponse{connected = true},
+				},
 			)
 		}
 	}
