@@ -299,11 +299,11 @@ TCP_Err :: union {
 	Header_Err,
 	net.Network_Error,
 	net.TCP_Send_Error,
-	net.TCP_Recv_Error
+	net.TCP_Recv_Error,
 }
 
 // reads a packet from the tcp connection
-recv_connection :: proc(socket: net.TCP_Socket) -> (packet: Packet, err: TCP_Err) {
+recv_connection :: proc(socket: net.TCP_Socket) -> (packet: Packet, index: u8, err: TCP_Err) {
 	raw_payload: [dynamic]u8
 
 	buff: [4096]u8
@@ -343,12 +343,22 @@ recv_connection :: proc(socket: net.TCP_Socket) -> (packet: Packet, err: TCP_Err
 		return
 	}
 
+	when ODIN_DEBUG {
+		fmt.printfln("%v: received %v", packet.header.id, packet.header.type)
+	}
+
+	index = packet.header.id + 1
 	return
 }
 
-send_connection :: proc(socket: net.TCP_Socket, packet: Packet) -> (err: TCP_Err) {
-	fmt.println(packet)
+send_connection :: proc(socket: net.TCP_Socket, packet: Packet) -> (index: u8, err: TCP_Err) {
 	bytes := encode_packet(packet)
+
+	when ODIN_DEBUG {
+		fmt.printfln("%v: sent %v", packet.header.id, packet.header.type)
+	}
+
+	index = packet.header.id + 1
 	defer delete(bytes)
 
 	_, err = net.send_tcp(socket, bytes[:])

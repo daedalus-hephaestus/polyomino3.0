@@ -15,7 +15,7 @@ password := "polyominosrock"
 Options :: struct {
 	address:  string `args:"required" usage:"The ip address of the server"`,
 	password: string `usage:"The server password"`,
-	amount:   string `args:"required" usage:"The amount of polyominos you are willing to calculate"`,
+	amount:   u64 `args:"required" usage:"The amount of polyominos you are willing to calculate"`,
 }
 
 main :: proc() {
@@ -59,10 +59,10 @@ connect :: proc(opt: Options) {
 		{header = {type = .AuthRequest, id = id}, payload = poly.AuthRequest{secret = password}},
 	)
 
-	auth_response, auth_res_err := poly.recv_connection(socket)
+	auth_response: poly.Packet
+	auth_res_err: poly.TCP_Err
+	auth_response, id, auth_res_err = poly.recv_connection(socket)
 	defer delete(auth_response.raw_payload)
-
-	id = auth_response.header.id + 1
 
 	hash: [20]u8
 	#partial switch p in auth_response.payload {
@@ -72,13 +72,29 @@ connect :: proc(opt: Options) {
 		return
 	}
 
-	poly.send_connection(
+	id, _ = poly.send_connection(
 		socket,
 		{header = {type = .AuthResponse, id = id}, payload = poly.AuthResponse{auth_data = hash}},
 	)
 
+	auth_response, id, auth_res_err = poly.recv_connection(socket)
+	#partial switch p in auth_response.payload {
+	case poly.AuthSuccess:
+		id, _ = poly.send_connection(
+			socket,
+			{
+				header = {type = .TaskRequest, id = id},
+				payload = poly.TaskRequest{amount = opt.amount},
+			},
+		)
+	case:
+		return
+	}
+
 	for {
-		packet, err := poly.recv_connection(socket)
+		packet: poly.Packet
+		err: poly.TCP_Err
+		packet, id, err = poly.recv_connection(socket)
 		if packet.header.type == .Disconnect do break
 		defer delete(packet.raw_payload)
 
@@ -86,13 +102,16 @@ connect :: proc(opt: Options) {
 
 		#partial switch p in packet.payload {
 		case poly.TimeoutRequest:
-			poly.send_connection(
+			id, _ = poly.send_connection(
 				socket,
 				{
 					header = {type = .TimeoutResponse, id = id},
 					payload = poly.TimeoutResponse{connected = true},
 				},
 			)
+		case poly.TaskResponse:
+			poly.print_polyomino(p.start)
+			poly.print_polyomino(p.stop)
 		}
 	}
 

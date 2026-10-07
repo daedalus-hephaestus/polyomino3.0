@@ -12,41 +12,13 @@ import "core:time"
 
 secret := "polyominosrock"
 
+
 Options :: struct {
 	size:     int `args:"required" usage:"The size of the polyominos being indexed"`,
 	type:     poly.PolyominoType `usage:"The type of the polyominos being indexed"`,
 	port:     int `args:"required" usage:"The port that tcp clients connect to"`,
 	address:  string `args:"required" usage:"The ip address of the server"`,
 	password: string `usage:"The server password"`,
-}
-
-AssignmentStatus :: enum {
-	WORKING,
-	TIMEOUT,
-	DISCONNECTED,
-	DONE,
-}
-
-Assignment :: struct {
-	socket:   net.TCP_Socket,
-	endpoint: net.Endpoint,
-	queue:    ^Queue,
-	status:   AssignmentStatus,
-	size:     int,
-	type:     poly.PolyominoType,
-	range:    poly.Range,
-	found:    [dynamic]poly.Polyomino,
-	running:  ^bool,
-	tcp_id:   u8,
-}
-
-Queue :: struct {
-	size:           int,
-	type:           poly.PolyominoType,
-	highest:        poly.Polyomino,
-	checked_ranges: [dynamic]poly.Range,
-	assignments:    [dynamic]^Assignment,
-	password:       string,
 }
 
 Server :: struct {
@@ -56,36 +28,12 @@ Server :: struct {
 	queue:       ^Queue,
 	console:     ^thread.Thread,
 	manager:     ^thread.Thread,
-	mutex:       sync.Mutex,
 	allocator:   mem.Allocator,
-}
-
-remove_assignment :: proc(assignment: ^Assignment, queue: ^Queue) {
-	for a, i in queue.assignments {
-		if a == assignment do unordered_remove(&queue.assignments, i)
-	}
-}
-
-destroy_assignment :: proc(assignment: ^Assignment, allocator: mem.Allocator = context.allocator) {
-	poly.destroy_range(&assignment.range)
-
-	for p in assignment.found do poly.destroy_polyomino(p)
-	delete(assignment.found)
-
-	free(assignment, allocator)
-}
-
-destroy_queue :: proc(queue: ^Queue) {
-	poly.destroy_polyomino(queue.highest)
-	for &r in queue.checked_ranges do poly.destroy_range(&r)
-	delete(queue.checked_ranges)
-	delete(queue.assignments)
 }
 
 destroy_server :: proc(server: ^Server) {
 	for a in server.queue.assignments {
 		net.shutdown(a.socket, .Both)
-		// destroy_assignment(a)
 	}
 
 	for t in server.tcp_threads {
@@ -137,6 +85,14 @@ start_server :: proc(opt: Options) {
 		size     = opt.size,
 		password = opt.password,
 	}
+
+	append(&queue.unchecked_ranges, {
+		poly.min_polyomino(opt.size),
+		poly.max_polyomino(opt.size)
+	})
+
+	poly.print_range(queue.unchecked_ranges[0])
+
 	defer destroy_queue(&queue)
 
 	server: Server = {
@@ -146,9 +102,6 @@ start_server :: proc(opt: Options) {
 		allocator = context.allocator,
 	}
 	defer destroy_server(&server)
-
-	
-
 
 	// start server manager and console thread
 	server.console = thread.create_and_start_with_poly_data(&server, console)
@@ -182,54 +135,13 @@ start_server :: proc(opt: Options) {
 	}
 }
 
-handle_assignment :: proc(assignment: ^Assignment) {
-	success := authenticate(assignment)
-	if success {
-		poly.send_connection(
-			assignment.socket,
-			{
-				header = {type = .AuthSuccess, id = assignment.tcp_id},
-				payload = poly.AuthSuccess{success = true, message = "welcome to rome!"},
-			},
-		)
-	} else {
-		poly.send_connection(
-			assignment.socket,
-			{
-				header = {type = .AuthSuccess, id = assignment.tcp_id},
-				payload = poly.AuthSuccess{success = false, message = "password does not match"},
-			},
-		)
-		net.close(assignment.socket)
-		return
-	}
-
-	for assignment.running^ {
-
-		packet, recv_err := poly.recv_connection(assignment.socket)
-		if packet.header.type == .Disconnect do break
-		defer delete(packet.raw_payload)
-
-		assignment.tcp_id = packet.header.id + 1
-
-		#partial switch p in packet.payload {
-		case poly.TimeoutResponse:
-			if p.connected {
-				assignment.status = .WORKING
-				fmt.println("still workin'!")
-			}
-		}
-
-	}
-
-	assignment.status = .DISCONNECTED
-	return
-}
-
 authenticate :: proc(assignment: ^Assignment) -> (success: bool) {
-	packet, recv_err := poly.recv_connection(assignment.socket)
-	if recv_err != nil do return
+	packet : poly.Packet
+	recv_err : poly.TCP_Err
+	packet, assignment.tcp_id, recv_err = poly.recv_connection(assignment.socket)
 	defer delete(packet.raw_payload)
+
+	if recv_err != nil do return
 
 	assignment.tcp_id = packet.header.id + 1
 
@@ -243,7 +155,7 @@ authenticate :: proc(assignment: ^Assignment) -> (success: bool) {
 	auth_data := poly.auth_data()
 	expected_hash := poly.encrypt_password(assignment.queue.password, auth_data)
 
-	poly.send_connection(
+	assignment.tcp_id, _ = poly.send_connection(
 		assignment.socket,
 		{
 			header = {type = .AuthResponse, id = assignment.tcp_id},
@@ -251,13 +163,9 @@ authenticate :: proc(assignment: ^Assignment) -> (success: bool) {
 		},
 	)
 
-	hash, hash_recv_err := poly.recv_connection(assignment.socket)
-	defer delete(hash.raw_payload)
+	packet, assignment.tcp_id, recv_err = poly.recv_connection(assignment.socket)
 
-	assignment.tcp_id = hash.header.id + 1
-	fmt.println(assignment.tcp_id)
-
-	#partial switch p in hash.payload {
+	#partial switch p in packet.payload {
 	case poly.AuthResponse:
 		return p.auth_data == expected_hash
 	case:
@@ -277,11 +185,11 @@ console :: proc(server: ^Server) {
 		cmd := string(buf[:n - 1])
 		switch cmd {
 		case "exit", "close":
-			sync.mutex_lock(&server.mutex)
+			sync.mutex_lock(&server.queue.mutex)
 			server.running = false
 			wake, dial_err := net.dial_tcp(server.endpoint)
 			if dial_err == nil do net.close(wake)
-			sync.mutex_unlock(&server.mutex)
+			sync.mutex_unlock(&server.queue.mutex)
 			return
 		case "list", "ls":
 			if len(server.queue.assignments) <= 0 {
@@ -297,7 +205,7 @@ console :: proc(server: ^Server) {
 manager :: proc(server: ^Server) {
 	for server.running {
 		time.sleep(time.Second * 5)
-		sync.mutex_lock(&server.mutex)
+		sync.mutex_lock(&server.queue.mutex)
 
 		// loop through and cleanup timed out assignments
 		for a in server.queue.assignments {
@@ -311,7 +219,7 @@ manager :: proc(server: ^Server) {
 				continue
 			}
 
-			poly.send_connection(
+			a.tcp_id, _ = poly.send_connection(
 				a.socket,
 				{
 					header = {type = .TimeoutRequest, id = a.tcp_id},
@@ -322,6 +230,6 @@ manager :: proc(server: ^Server) {
 
 		}
 
-		sync.mutex_unlock(&server.mutex)
+		sync.mutex_unlock(&server.queue.mutex)
 	}
 }
