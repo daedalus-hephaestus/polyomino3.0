@@ -95,6 +95,9 @@ connect :: proc(opt: Options) {
 		packet: poly.Packet
 		err: poly.TCP_Err
 		packet, id, err = poly.recv_connection(socket)
+
+		if err != nil do fmt.println(err)
+
 		if packet.header.type == .Disconnect do break
 		defer delete(packet.raw_payload)
 
@@ -110,10 +113,7 @@ connect :: proc(opt: Options) {
 				},
 			)
 		case poly.TaskResponse:
-			poly.print_polyomino(p.start)
-			poly.print_polyomino(p.stop)
+			calc_range(int(p.size), .FIXED, {p.start, p.stop}, 16)
 		}
 	}
-
-
 }

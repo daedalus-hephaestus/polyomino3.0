@@ -242,9 +242,13 @@ encode_task_response :: proc(packet: TaskResponse) -> (res: [dynamic]u8) {
 decode_task_response :: proc(buff: []u8) -> (res: TaskResponse, ok: bool) {
 	i := 0
 	res.amount, i = decode_int_inc(i, buff) or_return
+	fmt.println("parsed amount", res.amount)
 	res.size, i = decode_int_inc(i, buff) or_return
+	fmt.println("parsed size", res.size)
 	res.start, i = decode_polyomino_inc(i, buff) or_return
+	fmt.println("parsed start", res.start)
 	res.stop, i = decode_polyomino_inc(i, buff) or_return
+	fmt.println("parsed stop", res.stop)
 
 	ok = true
 	return

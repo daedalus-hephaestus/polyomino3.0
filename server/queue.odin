@@ -54,7 +54,17 @@ Assignment :: struct {
 
 remove_assignment :: proc(assignment: ^Assignment, queue: ^Queue) {
 	for a, i in queue.assignments {
-		if a == assignment do unordered_remove(&queue.assignments, i)
+
+		if a == assignment {
+			range, ok := queue.assigned_ranges[a.socket]
+			if ok {
+				inject_at(&queue.unchecked_ranges, 0, poly.clone_range(range))
+				poly.destroy_range(&range)
+				delete_key(&queue.assigned_ranges, a.socket)
+			}
+
+			unordered_remove(&queue.assignments, i)
+		}
 	}
 }
 
@@ -96,22 +106,27 @@ handle_assignment :: proc(assignment: ^Assignment) {
 		packet, assignment.tcp_id, recv_err = poly.recv_connection(assignment.socket)
 		defer delete(packet.raw_payload)
 
+		if recv_err != nil do break
+
 		if packet.header.type == .Disconnect do break
 
 		#partial switch p in packet.payload {
 		case poly.TimeoutResponse:
 			if p.connected do assignment.status = .WORKING
 		case poly.TaskRequest:
-			assign_range(p.amount, assignment)
+			amount := assign_range(p.amount, assignment)
+
+			fmt.println("requested:", p.amount, "- given:", p.amount)
+			poly.print_range(assignment.queue.assigned_ranges[assignment.socket])
 			assignment.tcp_id, _ = poly.send_connection(
 				assignment.socket,
 				{
 					header = {type = .TaskResponse, id = assignment.tcp_id},
-					payload = poly.TaskResponse{
-						amount = p.amount,
+					payload = poly.TaskResponse {
+						amount = amount,
 						size = u64(assignment.size),
 						start = assignment.queue.assigned_ranges[assignment.socket].start,
-						stop = assignment.queue.assigned_ranges[assignment.socket].stop
+						stop = assignment.queue.assigned_ranges[assignment.socket].stop,
 					},
 				},
 			)
@@ -119,28 +134,52 @@ handle_assignment :: proc(assignment: ^Assignment) {
 
 	}
 
+	sync.lock(&assignment.queue.mutex)
 	assignment.status = .DISCONNECTED
+	sync.unlock(&assignment.queue.mutex)
 	return
 }
 
-assign_range :: proc(amount: u64, assignment: ^Assignment) {
+assign_range :: proc(amount: u64, assignment: ^Assignment) -> (a: u64) {
+	fmt.println("assigning range:", amount)
+
+	poly.print_range(assignment.queue.unchecked_ranges[0])
+
 	q := assignment.queue
 	sync.lock(&q.mutex)
 
 	if len(q.unchecked_ranges) <= 0 {
 		fmt.println("no range found")
+		sync.unlock(&q.mutex)
 		return
 	}
 
 	cur_range := 0
 	range: poly.Range
+
+	range_length := poly.space_in_range(q.unchecked_ranges[cur_range], amount)
+	if range_length <= amount {
+		range = poly.clone_range(q.unchecked_ranges[cur_range])
+		poly.destroy_range(&q.unchecked_ranges[cur_range])
+		unordered_remove(&q.unchecked_ranges, cur_range)
+
+		q.assigned_ranges[assignment.socket] = range
+
+		sync.unlock(&q.mutex)
+		return range_length
+	}
+
 	range.start = poly.clone_polyomino(q.unchecked_ranges[cur_range].start)
 
 	outer: for i in 0 ..< amount {
 		if cur_range >= len(q.unchecked_ranges) {
 			fmt.println("no range found")
+
+			sync.unlock(&q.mutex)
 			return
 		}
+
+		a += 1
 
 		poly.inc_polyomino(&q.unchecked_ranges[cur_range].start)
 		comp := poly.compare_polyomino(
@@ -154,8 +193,8 @@ assign_range :: proc(amount: u64, assignment: ^Assignment) {
 			unordered_remove(&q.unchecked_ranges, cur_range)
 
 			q.assigned_ranges[assignment.socket] = range
+
 			sync.unlock(&q.mutex)
-			poly.print_range(q.assigned_ranges[assignment.socket])
 			return
 		}
 	}
@@ -164,7 +203,7 @@ assign_range :: proc(amount: u64, assignment: ^Assignment) {
 	poly.inc_polyomino(&q.unchecked_ranges[cur_range].start)
 
 	q.assigned_ranges[assignment.socket] = range
-	sync.unlock(&q.mutex)
 
-	poly.print_range(q.assigned_ranges[assignment.socket])
+	sync.unlock(&q.mutex)
+	return
 }

@@ -9,6 +9,7 @@ PolyominoType :: enum {
 	FREE,
 }
 
+
 Range :: struct {
 	start: Polyomino,
 	stop:  Polyomino,
@@ -24,6 +25,31 @@ print_range :: proc(range: Range) {
 	print_polyomino(range.stop)
 }
 
+clone_range :: proc(range: Range) -> (res: Range) {
+	res.start = clone_polyomino(range.start)
+	res.stop = clone_polyomino(range.stop)
+	return
+}
+
+space_in_range :: proc(range: Range, expected: u64) -> (size: u64) {
+	tmp := clone_polyomino(range.start)
+	defer destroy_polyomino(tmp)
+
+	if compare_polyomino(tmp, range.stop) == -1 do return 1
+
+	for {
+		if compare_polyomino(tmp, range.stop) != -1 {
+			inc_polyomino(&tmp)
+			size += 1
+			if size > expected do return size
+		} else {
+			break
+		}
+	}
+
+	return
+}
+
 encode_polyomino :: proc(poly: Polyomino) -> (res: [dynamic]u8) {
 	len := len(poly)
 	append_int(&res, u64(len))
@@ -36,7 +62,6 @@ encode_polyomino :: proc(poly: Polyomino) -> (res: [dynamic]u8) {
 }
 
 print_polyomino :: proc(poly: Polyomino) {
-	fmt.println("Polyomino binary:")
 	for i in poly {
 		for j in 0 ..< 128 {
 			fmt.print(i & (u128(1) << u128(127 - j)) != 0 ? "1" : "0")
@@ -83,7 +108,7 @@ decode_polyomino_inc :: proc(i: int, buff: []u8) -> (res: Polyomino, index: int,
 		start += 16
 	}
 
-	index = i + start - 2
+	index = start
 	ok = true
 	return
 }
@@ -107,7 +132,7 @@ min_polyomino :: proc(size: int) -> Polyomino {
 	return res
 }
 
-max_polyomino :: proc(size: int) -> (Polyomino) {
+max_polyomino :: proc(size: int) -> Polyomino {
 	res := make(Polyomino, ((size * 3 - 1) + 127) / 128)
 
 	for i in 0 ..< size {
@@ -127,7 +152,6 @@ max_polyomino :: proc(size: int) -> (Polyomino) {
 	return res
 }
 
-
 dec_polyomino :: proc(poly: ^Polyomino) -> bool {
 	i := 0
 	for {
@@ -140,7 +164,7 @@ dec_polyomino :: proc(poly: ^Polyomino) -> bool {
 				i += 1
 			}
 		} else {
-			poly[i] = new_val 
+			poly[i] = new_val
 			return false
 		}
 	}
@@ -172,7 +196,7 @@ inc_polyomino :: proc(poly: ^Polyomino) {
 	max_index := i / 128 + 1
 	// Shifts all of the ones to the right which are before the previously moved 1
 	// e.g. 110101 -> 110011
-	for cur in 0..<max_index {
+	for cur in 0 ..< max_index {
 		if cur != max_index - 1 {
 			poly[cur] = 0
 		} else {
@@ -190,13 +214,13 @@ inc_polyomino :: proc(poly: ^Polyomino) {
 }
 
 clone_polyomino :: proc(poly: Polyomino) -> Polyomino {
-	res : Polyomino
+	res: Polyomino
 	for i in poly do append(&res, i)
 	return res
 }
 
-// if the first is greater than the second, return 0
-// if the first is less than the second, return 1
+// if the first is less than the second, return 0
+// if the first is greater than the second, return 1
 compare_polyomino :: proc(poly0: Polyomino, poly1: Polyomino) -> int {
 	l0 := len(poly0)
 	l1 := len(poly1)
@@ -213,11 +237,11 @@ compare_polyomino :: proc(poly0: Polyomino, poly1: Polyomino) -> int {
 
 	for i := smaller_len - 1; i > -1; i -= 1 {
 		if s0[i] == s1[i] {
-	continue
+			continue
 		} else if s0[i] < s1[i] {
-			return 0 
+			return 0
 		} else if s0[i] > s1[i] {
-			return 1 
+			return 1
 		}
 	}
 	return -1

@@ -86,12 +86,7 @@ start_server :: proc(opt: Options) {
 		password = opt.password,
 	}
 
-	append(&queue.unchecked_ranges, {
-		poly.min_polyomino(opt.size),
-		poly.max_polyomino(opt.size)
-	})
-
-	poly.print_range(queue.unchecked_ranges[0])
+	append(&queue.unchecked_ranges, {poly.min_polyomino(opt.size), poly.max_polyomino(opt.size)})
 
 	defer destroy_queue(&queue)
 
@@ -128,7 +123,10 @@ start_server :: proc(opt: Options) {
 			running  = &server.running,
 			queue    = &queue,
 		}
+
+		sync.lock(&queue.mutex)
 		append(&queue.assignments, assignment)
+		sync.unlock(&queue.mutex)
 
 		thread := thread.create_and_start_with_poly_data(assignment, handle_assignment)
 		append(&server.tcp_threads, thread)
@@ -136,8 +134,8 @@ start_server :: proc(opt: Options) {
 }
 
 authenticate :: proc(assignment: ^Assignment) -> (success: bool) {
-	packet : poly.Packet
-	recv_err : poly.TCP_Err
+	packet: poly.Packet
+	recv_err: poly.TCP_Err
 	packet, assignment.tcp_id, recv_err = poly.recv_connection(assignment.socket)
 	defer delete(packet.raw_payload)
 
@@ -185,11 +183,13 @@ console :: proc(server: ^Server) {
 		cmd := string(buf[:n - 1])
 		switch cmd {
 		case "exit", "close":
-			sync.mutex_lock(&server.queue.mutex)
+
+			sync.lock(&server.queue.mutex)
 			server.running = false
+			sync.unlock(&server.queue.mutex)
+
 			wake, dial_err := net.dial_tcp(server.endpoint)
 			if dial_err == nil do net.close(wake)
-			sync.mutex_unlock(&server.queue.mutex)
 			return
 		case "list", "ls":
 			if len(server.queue.assignments) <= 0 {
@@ -205,19 +205,21 @@ console :: proc(server: ^Server) {
 manager :: proc(server: ^Server) {
 	for server.running {
 		time.sleep(time.Second * 5)
-		sync.mutex_lock(&server.queue.mutex)
+
+		sync.lock(&server.queue.mutex)
 
 		// loop through and cleanup timed out assignments
 		for a in server.queue.assignments {
-
-
 			if a.status == .DISCONNECTED || a.status == .TIMEOUT {
+
 				remove_assignment(a, server.queue)
 				destroy_assignment(a, server.allocator)
 
 				fmt.println("removing disconnected client")
 				continue
 			}
+
+			sync.unlock(&server.queue.mutex)
 
 			a.tcp_id, _ = poly.send_connection(
 				a.socket,
@@ -226,6 +228,7 @@ manager :: proc(server: ^Server) {
 					payload = poly.TimeoutRequest{timeout = 5000},
 				},
 			)
+			sync.lock(&server.queue.mutex)
 			a.status = .TIMEOUT
 
 		}
